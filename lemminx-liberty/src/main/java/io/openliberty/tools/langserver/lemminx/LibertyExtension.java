@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2020, 2025 IBM Corporation and others.
+* Copyright (c) 2020, 2026 IBM Corporation and others.
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License v. 2.0 which is available at
@@ -16,6 +16,7 @@ import io.openliberty.tools.langserver.lemminx.services.FileWatchService;
 import io.openliberty.tools.langserver.lemminx.services.LibertyWorkspace;
 import io.openliberty.tools.langserver.lemminx.util.LibertyVersionDownloadUtil;
 import org.eclipse.lemminx.services.extensions.IDocumentLinkParticipant;
+import org.eclipse.lemminx.services.extensions.IDefinitionParticipant;
 import org.eclipse.lemminx.services.extensions.codeaction.ICodeActionParticipant;
 import org.eclipse.lemminx.services.extensions.completion.ICompletionParticipant;
 import org.eclipse.lemminx.services.extensions.hover.IHoverParticipant;
@@ -50,7 +51,7 @@ public class LibertyExtension implements IXMLExtension {
     private IDiagnosticsParticipant diagnosticsParticipant;
     private ICodeActionParticipant codeActionsParticipant;
     private IDocumentLinkParticipant documentLinkParticipant;
-
+    private IDefinitionParticipant definitionParticipant;
     @Override
     public void start(InitializeParams initializeParams, XMLExtensionsRegistry xmlExtensionsRegistry) {
         try {
@@ -89,6 +90,9 @@ public class LibertyExtension implements IXMLExtension {
         documentLinkParticipant = new LibertyDocumentLinkParticipant();
         xmlExtensionsRegistry.registerDocumentLinkParticipant(documentLinkParticipant);
 
+        definitionParticipant = new LibertyDefinitionParticipant();
+        xmlExtensionsRegistry.registerDefinitionParticipant(definitionParticipant);
+
         try {
             SettingsService.getInstance()
                     .populateAllVariables(LibertyProjectsManager.getInstance().getLibertyWorkspaceFolders());
@@ -125,6 +129,8 @@ public class LibertyExtension implements IXMLExtension {
         xmlExtensionsRegistry.unregisterHoverParticipant(hoverParticipant);
         xmlExtensionsRegistry.unregisterDiagnosticsParticipant(diagnosticsParticipant);
         xmlExtensionsRegistry.unregisterCodeActionParticipant(codeActionsParticipant);
+        xmlExtensionsRegistry.unregisterDocumentLinkParticipant(documentLinkParticipant);
+        xmlExtensionsRegistry.unregisterDefinitionParticipant(definitionParticipant);
         FileWatchService.getInstance().cleanFileMonitors();
     }
 

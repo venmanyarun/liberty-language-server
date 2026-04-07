@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2020, 2025 IBM Corporation and others.
+* Copyright (c) 2020, 2026 IBM Corporation and others.
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License v. 2.0 which is available at
@@ -13,6 +13,7 @@
 package io.openliberty.tools.langserver.lemminx.services;
 
 import io.openliberty.tools.common.plugins.config.ServerConfigDocument;
+import io.openliberty.tools.common.plugins.config.VariableLocation;
 import io.openliberty.tools.langserver.lemminx.util.CommonLogger;
 import io.openliberty.tools.langserver.lemminx.util.LibertyUtils;
 import io.openliberty.tools.langserver.lemminx.util.ResourceBundleUtil;
@@ -50,6 +51,9 @@ public class SettingsService {
     private LibertySettings settings;
 
     private Map<String,Properties> variables;
+    private Map<String, Map<String, List<VariableLocation>>> variableLocations;
+    private Map<String, File> configDirectories; // Maps workspace URI to source config directory
+    private Map<String, File> serverDirectories; // Maps workspace URI to target server directory
     private Locale currentLocale = Locale.getDefault();
     private boolean configCopiedToServer = false;
     private String latestRuntimeVersion;
@@ -92,6 +96,9 @@ public class SettingsService {
      */
     public void populateAllVariables(Collection<LibertyWorkspace> workspaceFolders) {
         variables = new HashMap<>();
+        variableLocations = new HashMap<>();
+        configDirectories = new HashMap<>();
+        serverDirectories = new HashMap<>();
         for (LibertyWorkspace workspace : workspaceFolders) {
             populateVariablesForWorkspace(workspace);
         }
@@ -104,18 +111,34 @@ public class SettingsService {
      */
     public void populateVariablesForWorkspace(LibertyWorkspace workspace) {
         Properties variablesForWorkspace = new Properties();
+        Map<String, List<VariableLocation>> locationsForWorkspace = new HashMap<>();
         Path pluginConfigFilePath = findFileInWorkspace(workspace, Paths.get("liberty-plugin-config.xml"));
         if (pluginConfigFilePath != null) {
             File installDirectory = LibertyUtils.getFileFromLibertyPluginXml(pluginConfigFilePath, "installDirectory");
             File serverDirectory = LibertyUtils.getFileFromLibertyPluginXml(pluginConfigFilePath, "serverDirectory");
             File userDirectory = LibertyUtils.getFileFromLibertyPluginXml(pluginConfigFilePath, "userDirectory");
             File serverOutputDirectory = LibertyUtils.getFileFromLibertyPluginXml(pluginConfigFilePath, "serverOutputDirectory");
+            File configDirectory = LibertyUtils.getFileFromLibertyPluginXml(pluginConfigFilePath, "configDirectory");
+            
             if (serverDirectory != null && installDirectory != null && userDirectory != null && serverOutputDirectory !=null) {
                 try {
                     ServerConfigDocument serverConfigDocument = new ServerConfigDocument(
                             new CommonLogger(LOGGER), null, installDirectory, userDirectory, serverDirectory, serverOutputDirectory);
                     variablesForWorkspace.putAll(serverConfigDocument.getDefaultProperties());
                     variablesForWorkspace.putAll(serverConfigDocument.getProperties());
+                    
+                    // Get variable locations from ServerConfigDocument
+                    Map<String, List<VariableLocation>> configLocations = serverConfigDocument.getVariableLocations();
+                    if (configLocations != null) {
+                        locationsForWorkspace.putAll(configLocations);
+                    }
+                    
+                    // Store directory mappings for path translation
+                    if (configDirectory != null) {
+                        configDirectories.put(workspace.getWorkspaceString(), configDirectory);
+                    }
+                    serverDirectories.put(workspace.getWorkspaceString(), serverDirectory);
+                    
                     LOGGER.finest("Populated variables for workspace: " + workspace.getWorkspaceString() + ". Number of variables found: " + variablesForWorkspace.size());
                 } catch (Exception e) {
                     LOGGER.warning("Variable resolution is not available because the necessary directory locations were not found in the liberty-plugin-config.xml file.");
@@ -126,6 +149,7 @@ public class SettingsService {
             LOGGER.warning("Could not find liberty-plugin-config.xml in workspace URI " + workspace.getWorkspaceString() + ". Variable resolution cannot be performed");
         }
         variables.put(workspace.getWorkspaceString(), variablesForWorkspace);
+        variableLocations.put(workspace.getWorkspaceString(), locationsForWorkspace);
     }
 
     /**
@@ -145,6 +169,25 @@ public class SettingsService {
             LOGGER.warning("Could not find variable mapping for workspace URI %s. Variable resolution cannot be performed.".formatted(workspace.getWorkspaceString()));
         }
         return variableProps;
+    }
+
+    /**
+     * Get variable locations for a workspace server xml file
+     *
+     * @param serverXmlURI serverXmlURI
+     * @return variable locations map (variable name -> list of locations)
+     */
+    public Map<String, List<VariableLocation>> getVariableLocationsForServerXml(String serverXmlURI) {
+        LibertyWorkspace workspace = LibertyProjectsManager.getInstance().getWorkspaceFolder(serverXmlURI);
+        Map<String, List<VariableLocation>> locations = new HashMap<>();
+        if (workspace == null) {
+            LOGGER.warning("Could not find workspace for server xml URI %s. Variable location resolution cannot be performed.".formatted(serverXmlURI));
+        } else if (variableLocations != null && variableLocations.containsKey(workspace.getWorkspaceString())) {
+            locations = variableLocations.get(workspace.getWorkspaceString());
+        } else {
+            LOGGER.warning("Could not find variable location mapping for workspace URI %s. Variable location resolution cannot be performed.".formatted(workspace.getWorkspaceString()));
+        }
+        return locations;
     }
 
     public boolean isConfigCopiedToServer() {
@@ -212,5 +255,54 @@ public class SettingsService {
 
     public void setFeatureJsonFilePath(Path featureJsonFilePath) {
         this.featureJsonFilePath = featureJsonFilePath;
+    }
+
+    /**
+     * Map a target file path to its source equivalent.
+     * Dev mode copies files from src/main/liberty/config to target/liberty/wlp/usr/servers/serverName.
+     * This method maps the target path back to the source path for "Go to Definition".
+     *
+     * @param serverXmlURI The server.xml URI to determine the workspace
+     * @param targetPath   The path in the target directory
+     * @return The corresponding source path, or the original path if mapping fails
+     */
+    public String mapTargetPathToSource(String serverXmlURI, String targetPath) {
+        try {
+            LibertyWorkspace workspace = LibertyProjectsManager.getInstance().getWorkspaceFolder(serverXmlURI);
+            if (workspace == null) {
+                return targetPath;
+            }
+
+            String workspaceKey = workspace.getWorkspaceString();
+            File configDir = configDirectories != null ? configDirectories.get(workspaceKey) : null;
+            File serverDir = serverDirectories != null ? serverDirectories.get(workspaceKey) : null;
+
+            if (configDir == null || serverDir == null) {
+                return targetPath;
+            }
+
+            // Convert to canonical paths for comparison
+            String targetCanonical = new File(targetPath).getCanonicalPath();
+            String serverDirCanonical = serverDir.getCanonicalPath();
+            String configDirCanonical = configDir.getCanonicalPath();
+
+            // If the target path is under the server directory, map it to config directory
+            if (targetCanonical.startsWith(serverDirCanonical)) {
+                String relativePath = targetCanonical.substring(serverDirCanonical.length());
+                String sourcePath = configDirCanonical + relativePath;
+                
+                // Check if the source file exists
+                File sourceFile = new File(sourcePath);
+                if (sourceFile.exists()) {
+                    LOGGER.fine("Mapped target path " + targetPath + " to source path " + sourcePath);
+                    return sourcePath;
+                }
+            }
+
+            return targetPath;
+        } catch (Exception e) {
+            LOGGER.warning("Error mapping target path to source: " + e.getMessage());
+            return targetPath;
+        }
     }
 }
