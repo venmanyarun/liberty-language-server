@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2020, 2025 IBM Corporation and others.
+* Copyright (c) 2020, 2026 IBM Corporation and others.
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License v. 2.0 which is available at
@@ -20,6 +20,9 @@ import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
+import org.eclipse.lsp4j.InlineCompletionItem;
+import org.eclipse.lsp4j.InlineCompletionList;
+import org.eclipse.lsp4j.InlineCompletionParams;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
 import io.openliberty.tools.langserver.ls.LibertyTextDocument;
@@ -43,6 +46,7 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import io.openliberty.tools.langserver.completion.LibertyPropertiesCompletionProvider;
+import io.openliberty.tools.langserver.completion.inline.InlineCompletionHandler;
 import io.openliberty.tools.langserver.diagnostic.DiagnosticRunner;
 import io.openliberty.tools.langserver.hover.LibertyPropertiesHoverProvider;
 
@@ -147,6 +151,27 @@ public class LibertyTextDocumentService implements TextDocumentService {
     public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(CodeActionParams params) {
         LOGGER.info("codeAction: "+ params.getTextDocument());
         return new CodeActionParticipant(this,libertyLanguageServer).getCodeActions(params);
+    }
+
+    /**
+     * Handle inline completion requests.
+     * Reuses existing completion logic and transforms results into inline completion format.
+     */
+    @Override
+    public CompletableFuture<Either<List<InlineCompletionItem>, InlineCompletionList>> inlineCompletion(InlineCompletionParams params) {
+        String uri = params.getTextDocument().getUri();
+        LOGGER.info("inlineCompletion: " + uri);
+        
+        LibertyTextDocument textDocumentItem = documents.get(uri);
+        if (textDocumentItem != null) {
+            return new InlineCompletionHandler(textDocumentItem).getInlineCompletions(params)
+                .thenApply(Either::forRight);
+        } else {
+            LOGGER.info("The document with uri " + uri + " has not been found in opened documents. Cannot provide inline completion.");
+            InlineCompletionList emptyResult = new InlineCompletionList();
+            emptyResult.setItems(Collections.emptyList());
+            return CompletableFuture.completedFuture(Either.forRight(emptyResult));
+        }
     }
 
     private void validate(List<String> uris) {

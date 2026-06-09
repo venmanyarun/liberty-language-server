@@ -56,12 +56,12 @@ public class LibertyConfigFileManagerTest {
     public void initCustomConfigTest() {
         assertFalse(LibertyConfigFileManager.isBootstrapPropertiesFile(ANOTHER_BOOTSTRAP));
         if (File.separator.equals("/")) {
-            WorkspaceFolder folder = new WorkspaceFolder(resourcesDir2.toURI().toString());
+            WorkspaceFolder folder = new WorkspaceFolder(resourcesDir2.toURI().toString(), "test");
             LibertyConfigFileManager.processWorkspaceDir(folder);
             assertTrue(LibertyConfigFileManager.isServerEnvFile(CUSTOM_SERVER_ENV));
             assertTrue(LibertyConfigFileManager.isBootstrapPropertiesFile(ANOTHER_BOOTSTRAP));
         } else {
-            WorkspaceFolder folder = new WorkspaceFolder(resourcesDir.toURI().toString());
+            WorkspaceFolder folder = new WorkspaceFolder(resourcesDir.toURI().toString(), "test");
             LibertyConfigFileManager.processWorkspaceDir(folder);
             assertTrue(LibertyConfigFileManager.isServerEnvFile(WINDOWS_CUSTOM_SERVER_ENV));
             assertTrue(LibertyConfigFileManager.isBootstrapPropertiesFile(WINDOWS_CUSTOM_BOOTSTRAP_PROPERTIES));

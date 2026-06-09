@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2020, 2025 IBM Corporation and others.
+* Copyright (c) 2020, 2026 IBM Corporation and others.
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License v. 2.0 which is available at
@@ -20,6 +20,7 @@ import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionOptions;
 import org.eclipse.lsp4j.CompletionOptions;
+import org.eclipse.lsp4j.InlineCompletionTriggerKind;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
@@ -73,6 +74,10 @@ public class LibertyLanguageServer extends AbstractLanguageServer implements Pro
         capabilities.setHoverProvider(Boolean.TRUE);
         capabilities.setCompletionProvider(new CompletionOptions(Boolean.TRUE, Arrays.asList("=")));
         capabilities.setCodeActionProvider(new CodeActionOptions(List.of(CodeActionKind.QuickFix)));
+        
+        // Enable inline completion support
+        capabilities.setInlineCompletionProvider(Boolean.TRUE);
+        
         return capabilities;
     }
 

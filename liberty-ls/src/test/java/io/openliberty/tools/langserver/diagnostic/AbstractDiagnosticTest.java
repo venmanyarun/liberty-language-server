@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2022, 2023 IBM Corporation and others.
+* Copyright (c) 2022, 2026 IBM Corporation and others.
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License v. 2.0 which is available at
@@ -78,8 +78,9 @@ public class AbstractDiagnosticTest extends AbstractLibertyLanguageServerTest {
 
         for (Diagnostic diag : diags) {
             if (diag.getSeverity() == DiagnosticSeverity.Error) {
-                assertFalse("Diagnostic message is unexpectedly empty.", diag.getMessage().isEmpty());
-                expectedMessages.remove(diag.getMessage());
+                String message = diag.getMessage().isLeft() ? diag.getMessage().getLeft() : diag.getMessage().getRight().getValue();
+                assertFalse("Diagnostic message is unexpectedly empty.", message.isEmpty());
+                expectedMessages.remove(message);
             }
         }
         assertEquals("Did not find all the expected diagnostic error messages. These messages were not found: " + expectedMessages.toString(), 0, expectedMessages.size());
@@ -91,8 +92,9 @@ public class AbstractDiagnosticTest extends AbstractLibertyLanguageServerTest {
 
         for (Diagnostic diag : diags) {
             if (diag.getSeverity() == DiagnosticSeverity.Warning) {
-                assertFalse("Diagnostic message is unexpectedly empty.", diag.getMessage().isEmpty());
-                expectedMessages.remove(diag.getMessage());
+                String message = diag.getMessage().isLeft() ? diag.getMessage().getLeft() : diag.getMessage().getRight().getValue();
+                assertFalse("Diagnostic message is unexpectedly empty.", message.isEmpty());
+                expectedMessages.remove(message);
             }
         }
         assertEquals("Did not find all the expected diagnostic warning messages. These messages were not found: " + expectedMessages.toString(), 0, expectedMessages.size());
