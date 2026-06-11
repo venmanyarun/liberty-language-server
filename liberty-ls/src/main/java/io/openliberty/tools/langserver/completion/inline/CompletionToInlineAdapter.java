@@ -66,9 +66,9 @@ public class CompletionToInlineAdapter {
         if(partialText.contains("=")){
             partialText=partialText.substring(partialText.indexOf("=")+1);
         }
-        // If there's partial text, the completion should start with it
+        // Use substring matching to match behavior of regular completions
         if (!partialText.isEmpty()) {
-            return label.toLowerCase().startsWith(partialText.toLowerCase());
+            return label.toLowerCase().contains(partialText.toLowerCase());
         }
         
         return true;
@@ -81,22 +81,24 @@ public class CompletionToInlineAdapter {
                                                            InlineCompletionContext context) {
         InlineCompletionItem inlineItem = new InlineCompletionItem();
         
-        // Extract the insert text
-        String insertText = getInsertText(item);
-        
-        // Remove the partial text that's already typed
+        // Extract the full insert text from the completion item
+        String fullInsertText = getInsertText(item);
         String partialText = context.getPartialText();
-        if (!partialText.isEmpty() && insertText.toLowerCase().startsWith(partialText.toLowerCase())) {
-            insertText = insertText.substring(partialText.length());
-        }
         
-        // Set the insert text as Either<String, StringValue>
+        // For inline completions, always provide the FULL completion text
+        // and use a range to replace what the user has typed
+        String insertText = fullInsertText;
+        
+        // Set the insert text
         inlineItem.setInsertText(Either.forLeft(insertText));
         
-        // Set the range if available from the completion item
-        Range range = getRange(item, context);
-        if (range != null) {
-            inlineItem.setRange(range);
+        // Always set a range to replace the partial text with the full completion
+        // This ensures VSCode shows the complete text, not fragments starting with special chars
+        if (!partialText.isEmpty()) {
+            Range range = createRangeForReplacement(context, partialText, fullInsertText);
+            if (range != null) {
+                inlineItem.setRange(range);
+            }
         }
         
         // Set filter text (used for ranking)
@@ -110,30 +112,27 @@ public class CompletionToInlineAdapter {
     }
     
     /**
-     * Extract the range from a CompletionItem.
-     * For inline completions, the range should start at the current cursor position,
-     * not at the beginning of the word being completed.
+     * Create a range that replaces the typed text with the full completion.
+     * This works for both prefix and substring matches.
      */
-    private Range getRange(CompletionItem item, InlineCompletionContext context) {
+    private Range createRangeForReplacement(InlineCompletionContext context, String partialText, String fullText) {
         Position currentPos = context.getPosition();
-        String partialText = context.getPartialText();
-        String insertText = getInsertText(item);
+        int line = currentPos.getLine();
+        int cursorChar = currentPos.getCharacter();
         
-        // Calculate where the completion text will end
-        // If we removed partial text from insertText, add it back to get full length
-        int fullLength = insertText.length();
-        if (!partialText.isEmpty() && getInsertText(item).toLowerCase().startsWith(partialText.toLowerCase())) {
-            fullLength += partialText.length();
-        }
+        // Start position: beginning of the typed partial text
+        int startChar = cursorChar - partialText.length();
+        if (startChar < 0) startChar = 0;
         
-        // Range starts at current cursor and extends by the length of remaining text
-        Position endPos = new Position(
-            currentPos.getLine(),
-            currentPos.getCharacter() + insertText.length()
+        // End position: where the full completion will end
+        int endChar = startChar + fullText.length();
+        
+        return new Range(
+            new Position(line, startChar),
+            new Position(line, endChar)
         );
-        
-        return new Range(currentPos, endPos);
     }
+    
     
     /**
      * Extract the insert text from a CompletionItem.
