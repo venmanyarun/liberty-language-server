@@ -51,7 +51,22 @@ public class InlineCompletionContext {
             charPos = line.length();
         }
         
-        return line.substring(0, charPos).trim();
+        // Get text up to cursor
+        String textBeforeCursor = line.substring(0, charPos);
+        
+        // Find the start of the current word by going backwards from cursor
+        // A word consists of letters, digits, and underscores
+        int wordStart = charPos - 1;
+        while (wordStart >= 0) {
+            char c = textBeforeCursor.charAt(wordStart);
+            if (!Character.isLetterOrDigit(c) && c != '_') {
+                break;
+            }
+            wordStart--;
+        }
+        wordStart++; // Move to the first character of the word
+        
+        return textBeforeCursor.substring(wordStart);
     }
     
     public String getDocumentUri() {

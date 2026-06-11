@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.InlineCompletionItem;
 import org.eclipse.lsp4j.InsertReplaceEdit;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -29,7 +30,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
  */
 public class CompletionToInlineAdapter {
     
-    private static final int MAX_INLINE_SUGGESTIONS = 3;
+    private static final int MAX_INLINE_SUGGESTIONS = 10;
     
     /**
      * Transform a list of CompletionItems into InlineCompletionItems.
@@ -62,7 +63,9 @@ public class CompletionToInlineAdapter {
         
         String label = item.getLabel();
         String partialText = context.getPartialText();
-        
+        if(partialText.contains("=")){
+            partialText=partialText.substring(partialText.indexOf("=")+1);
+        }
         // If there's partial text, the completion should start with it
         if (!partialText.isEmpty()) {
             return label.toLowerCase().startsWith(partialText.toLowerCase());
@@ -74,7 +77,7 @@ public class CompletionToInlineAdapter {
     /**
      * Convert a CompletionItem to an InlineCompletionItem.
      */
-    private InlineCompletionItem convertToInlineCompletion(CompletionItem item, 
+    private InlineCompletionItem convertToInlineCompletion(CompletionItem item,
                                                            InlineCompletionContext context) {
         InlineCompletionItem inlineItem = new InlineCompletionItem();
         
@@ -107,6 +110,32 @@ public class CompletionToInlineAdapter {
     }
     
     /**
+     * Extract the range from a CompletionItem.
+     * For inline completions, the range should start at the current cursor position,
+     * not at the beginning of the word being completed.
+     */
+    private Range getRange(CompletionItem item, InlineCompletionContext context) {
+        Position currentPos = context.getPosition();
+        String partialText = context.getPartialText();
+        String insertText = getInsertText(item);
+        
+        // Calculate where the completion text will end
+        // If we removed partial text from insertText, add it back to get full length
+        int fullLength = insertText.length();
+        if (!partialText.isEmpty() && getInsertText(item).toLowerCase().startsWith(partialText.toLowerCase())) {
+            fullLength += partialText.length();
+        }
+        
+        // Range starts at current cursor and extends by the length of remaining text
+        Position endPos = new Position(
+            currentPos.getLine(),
+            currentPos.getCharacter() + insertText.length()
+        );
+        
+        return new Range(currentPos, endPos);
+    }
+    
+    /**
      * Extract the insert text from a CompletionItem.
      */
     private String getInsertText(CompletionItem item) {
@@ -129,20 +158,4 @@ public class CompletionToInlineAdapter {
         return item.getLabel();
     }
     
-    /**
-     * Extract the range from a CompletionItem.
-     */
-    private Range getRange(CompletionItem item, InlineCompletionContext context) {
-        if (item.getTextEdit() != null) {
-            Either<TextEdit, InsertReplaceEdit> textEdit = item.getTextEdit();
-            if (textEdit.isLeft()) {
-                return textEdit.getLeft().getRange();
-            } else if (textEdit.isRight()) {
-                return textEdit.getRight().getInsert();
-            }
-        }
-        
-        // If no range in the completion item, use the current position
-        return null;
-    }
 }
