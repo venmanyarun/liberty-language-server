@@ -46,10 +46,10 @@ public class LibertyHoverTest {
         @Mock
         SettingsService settingsService;
 
-        MockedStatic settings;
+        MockedStatic<SettingsService> settings;
         static String newLine = System.lineSeparator();
         static File srcResourcesDir = new File("src/test/resources/sample");
-        static List<WorkspaceFolder> initList = new ArrayList<WorkspaceFolder>();
+        List<WorkspaceFolder> initList;
         LibertyProjectsManager libPM;
         LibertyWorkspace libWorkspace;
         static String serverXMLURI = new File(srcResourcesDir, "test/server.xml").toURI().toString();
@@ -57,7 +57,8 @@ public class LibertyHoverTest {
 
         @BeforeEach
         public void setup(){
-                initList.add(new WorkspaceFolder(srcResourcesDir.toURI().toString()));
+                initList = new ArrayList<WorkspaceFolder>();
+                initList.add(new WorkspaceFolder(new File(srcResourcesDir, "test").toURI().toString(),"workspace"));
                 libPM = LibertyProjectsManager.getInstance();
                 libPM.setWorkspaceFolders(initList);
                 libWorkspace = libPM.getLibertyWorkspaceFolders().iterator().next();
@@ -208,7 +209,7 @@ public class LibertyHoverTest {
                         "                <platform>javaee-6.0</platform>", //
                         "                <feature>acmeCA-2.0</feature>", //
                         "       </featureManager>", //
-                        " <httpEndpoint host=\"*\" httpPort=\"${default.|http.port}\"\n",//
+                        " <httpEndpoint host=\"*\" httpPort=\"|${default.http.port}\"",//
                         "                  httpsPort=\"${default.https.port}\" id=\"defaultHttpEndpoint\"/>",//
                         "</server>" //
                 );
@@ -216,7 +217,7 @@ public class LibertyHoverTest {
                 propsMap.put("default.http.port", "9080");
                 Properties props = new Properties();
                 props.putAll(propsMap);
-                when(settingsService.getVariablesForServerXml(any())).thenReturn(props);
+                when(settingsService.getVariablesForServerXml(serverXMLURI)).thenReturn(props);
                 XMLAssert.assertHover(serverXML, serverXMLURI,
                         "default.http.port = 9080",
                         r(5, 33, 5, 55));
@@ -228,7 +229,7 @@ public class LibertyHoverTest {
                         "                <platform>javaee-6.0</platform>", //
                         "                <feature>acmeCA-2.0</feature>", //
                         "       </featureManager>", //
-                        "<!-- <httpEndpoint host=\"*\" httpPort=\"${default.|http.port}\"\n",//
+                        "<!-- <httpEndpoint host=\"*\" httpPort=\"|${default.http.port}\"",//
                         "                  httpsPort=\"${default.https.port}\" id=\"defaultHttpEndpoint\"/>  -->",//
                         "</server>" //
                 );

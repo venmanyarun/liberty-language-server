@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2020, 2025 IBM Corporation and others.
+* Copyright (c) 2020, 2026 IBM Corporation and others.
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License v. 2.0 which is available at
@@ -28,9 +28,13 @@ import org.eclipse.lemminx.dom.DOMNode;
 import org.eclipse.lemminx.services.extensions.completion.CompletionParticipantAdapter;
 import org.eclipse.lemminx.services.extensions.completion.ICompletionRequest;
 import org.eclipse.lemminx.services.extensions.completion.ICompletionResponse;
+import org.eclipse.lemminx.services.extensions.inlinecompletion.IInlineCompletionParticipant;
+import org.eclipse.lemminx.services.extensions.inlinecompletion.IInlineCompletionRequest;
+import org.eclipse.lemminx.services.extensions.inlinecompletion.IInlineCompletionResponse;
 import org.eclipse.lemminx.utils.XMLPositionUtility;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.InlineCompletionItem;
 import org.eclipse.lsp4j.InsertReplaceEdit;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -44,7 +48,7 @@ import io.openliberty.tools.langserver.lemminx.services.SettingsService;
 import io.openliberty.tools.langserver.lemminx.util.LibertyConstants;
 import io.openliberty.tools.langserver.lemminx.util.LibertyUtils;
 
-public class LibertyCompletionParticipant extends CompletionParticipantAdapter {
+public class LibertyCompletionParticipant extends CompletionParticipantAdapter implements IInlineCompletionParticipant {
 
 
     @Override
@@ -254,4 +258,283 @@ public class LibertyCompletionParticipant extends CompletionParticipantAdapter {
         return uniqueFeatureCompletionItems;
     }
 
+    @Override
+    public void onInlineCompletion(IInlineCompletionRequest request, IInlineCompletionResponse response,
+            CancelChecker cancelChecker) {
+        if (!LibertyUtils.isConfigXMLFile(request.getXMLDocument())) {
+            return;
+        }
+
+        List<CompletionItem> completionItems = new ArrayList<>();
+        CompletionCollector collector = new CompletionCollector(completionItems);
+        DOMElement parentElement = request.getParentElement();
+
+        try {
+            if (parentElement != null && LibertyConstants.FEATURE_ELEMENT.equals(parentElement.getTagName())) {
+                collectFeatureInlineCompletions(request, completionItems);
+            } else if (parentElement != null && LibertyConstants.PLATFORM_ELEMENT.equals(parentElement.getTagName())) {
+                collectPlatformInlineCompletions(request, collector, parentElement);
+            } else {
+                collectVariableInlineCompletions(request, collector, cancelChecker);
+            }
+
+            System.out.println("[Liberty inline completion] parent="
+                    + (parentElement != null ? parentElement.getTagName() : "<none>")
+                    + ", completionItems=" + completionItems.size()
+                    + ", uri=" + request.getXMLDocument().getDocumentURI());
+
+            completionItems.stream()
+                    .map(this::toInlineCompletionItem)
+                    .filter(Objects::nonNull)
+                    .forEach(response::addInlineCompletionItem);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void collectFeatureInlineCompletions(IInlineCompletionRequest request, List<CompletionItem> completionItems) {
+        DOMElement parentElement = request.getParentElement();
+        DOMNode featureTextNode = (DOMNode) parentElement.getChildNodes().item(0);
+        String featureName = featureTextNode != null ? featureTextNode.getTextContent() : null;
+
+        List<String> existingFeatures = new ArrayList<>();
+        DOMNode featureMgrNode = null;
+        if (parentElement.getParentNode() != null
+                && LibertyConstants.FEATURE_MANAGER_ELEMENT.equals(parentElement.getParentNode().getNodeName())) {
+            featureMgrNode = parentElement.getParentNode();
+            existingFeatures = FeatureService.getInstance().collectExistingFeatures(parentElement.getParentNode(),
+                    featureName);
+        }
+
+        completionItems.addAll(buildCompletionItems(parentElement, request.getXMLDocument(), existingFeatures,
+                featureName, featureMgrNode));
+    }
+
+    private void collectPlatformInlineCompletions(IInlineCompletionRequest request, ICompletionResponse response,
+            DOMElement parentElement) {
+        DOMNode platformTextNode = (DOMNode) parentElement.getChildNodes().item(0);
+        String currentPlatformName = platformTextNode != null ? platformTextNode.getTextContent() : "";
+        String currentPlatformNameWithoutVersion = LibertyUtils.stripVersion(currentPlatformName);
+        List<String> existingPlatforms = FeatureService.getInstance()
+                .collectExistingPlatforms(request.getXMLDocument(), currentPlatformNameWithoutVersion);
+        List<String> existingPlatformsWithoutVersion = existingPlatforms.stream()
+                .map(LibertyUtils::stripVersion)
+                .collect(Collectors.toList());
+        buildPlatformCompletionItems(new InlineToCompletionRequest(request), response, parentElement,
+                existingPlatformsWithoutVersion);
+    }
+
+    private void collectVariableInlineCompletions(IInlineCompletionRequest request, ICompletionResponse response,
+            CancelChecker cancelChecker) throws Exception {
+        String valuePrefix = getAttributeValuePrefix(request);
+        if (valuePrefix != null && valuePrefix.contains("${")) {
+            onAttributeValue(valuePrefix, new InlineToCompletionRequest(request), response, cancelChecker);
+        }
+    }
+
+    private String getAttributeValuePrefix(IInlineCompletionRequest request) {
+        DOMNode node = request.getNode();
+        if (node == null) {
+            return null;
+        }
+        String textContent = node.getTextContent();
+        if (textContent == null) {
+            return null;
+        }
+        int prefixLength = Math.max(0, request.getOffset() - node.getStart());
+        return textContent.substring(0, Math.min(prefixLength, textContent.length()));
+    }
+
+    private InlineCompletionItem toInlineCompletionItem(CompletionItem item) {
+        String insertText = getInsertText(item);
+        if (insertText == null || insertText.isEmpty()) {
+            return null;
+        }
+
+        InlineCompletionItem inlineItem = new InlineCompletionItem();
+        inlineItem.setInsertText(insertText);
+        inlineItem.setFilterText(item.getFilterText() != null ? item.getFilterText() : item.getLabel());
+
+        Range range = getRange(item);
+        if (range != null) {
+            inlineItem.setRange(range);
+        }
+        return inlineItem;
+    }
+
+    private Range getRange(CompletionItem item) {
+        if (item.getTextEdit() == null) {
+            return null;
+        }
+        if (item.getTextEdit().isLeft()) {
+            return item.getTextEdit().getLeft().getRange();
+        }
+        return item.getTextEdit().getRight().getReplace();
+    }
+
+    private String getInsertText(CompletionItem item) {
+        if (item.getTextEdit() != null) {
+            if (item.getTextEdit().isLeft()) {
+                return item.getTextEdit().getLeft().getNewText();
+            }
+            return item.getTextEdit().getRight().getNewText();
+        }
+        if (item.getInsertText() != null) {
+            return item.getInsertText();
+        }
+        return item.getLabel();
+    }
+
+    private static final class CompletionCollector implements ICompletionResponse {
+
+        private final List<CompletionItem> items;
+
+        private CompletionCollector(List<CompletionItem> items) {
+            this.items = items;
+        }
+
+        @Override
+        public void addCompletionItem(CompletionItem completionItem, boolean comingFromGrammar) {
+            items.add(completionItem);
+        }
+
+        @Override
+        public void addCompletionItem(CompletionItem completionItem) {
+            items.add(completionItem);
+        }
+
+        @Override
+        public boolean hasSomeItemFromGrammar() {
+            return false;
+        }
+
+        @Override
+        public boolean hasAttribute(String attribute) {
+            return false;
+        }
+
+        @Override
+        public void addCompletionAttribute(CompletionItem completionItem) {
+            items.add(completionItem);
+        }
+    }
+
+    private static final class InlineToCompletionRequest implements ICompletionRequest {
+
+        private final IInlineCompletionRequest request;
+
+        private InlineToCompletionRequest(IInlineCompletionRequest request) {
+            this.request = request;
+        }
+
+        @Override
+        public DOMDocument getXMLDocument() {
+            return request.getXMLDocument();
+        }
+
+        @Override
+        public org.eclipse.lemminx.dom.DOMNode getNode() {
+            return request.getNode();
+        }
+
+        @Override
+        public DOMElement getParentElement() {
+            return request.getParentElement();
+        }
+
+        @Override
+        public int getOffset() {
+            return request.getOffset();
+        }
+
+        @Override
+        public org.eclipse.lsp4j.Position getPosition() {
+            return request.getPosition();
+        }
+
+        @Override
+        public String getCurrentTag() {
+            return null;
+        }
+
+        @Override
+        public org.eclipse.lemminx.dom.DOMAttr getCurrentAttribute() {
+            return null;
+        }
+
+        @Override
+        public String getCurrentAttributeName() {
+            return null;
+        }
+
+        @Override
+        public org.eclipse.lemminx.dom.LineIndentInfo getLineIndentInfo() throws BadLocationException {
+            throw new BadLocationException("Inline completion request does not support line indent info");
+        }
+
+        @Override
+        public <T> T getComponent(Class clazz) {
+            return request.getComponent(clazz);
+        }
+
+        @Override
+        public org.eclipse.lemminx.settings.SharedSettings getSharedSettings() {
+            return request.getSharedSettings();
+        }
+
+        @Override
+        public boolean canSupportMarkupKind(String kind) {
+            return request.canSupportMarkupKind(kind);
+        }
+
+        @Override
+        public Range getReplaceRange() {
+            return XMLPositionUtility.createRange(request.getOffset(), request.getOffset(), request.getXMLDocument());
+        }
+
+        @Override
+        public Range getReplaceRangeForTagName() {
+            return getReplaceRange();
+        }
+
+        @Override
+        public org.eclipse.lemminx.extensions.contentmodel.utils.XMLGenerator getXMLGenerator() throws BadLocationException {
+            throw new BadLocationException("Inline completion request does not support XML generator");
+        }
+
+        @Override
+        public String getFilterForStartTagName(String tagName) {
+            return tagName;
+        }
+
+        @Override
+        public String getInsertAttrValue(String value) {
+            return value;
+        }
+
+        @Override
+        public boolean isCompletionSnippetsSupported() {
+            return false;
+        }
+
+        @Override
+        public boolean isAutoCloseTags() {
+            return false;
+        }
+
+        @Override
+        public org.eclipse.lsp4j.InsertTextFormat getInsertTextFormat() {
+            return org.eclipse.lsp4j.InsertTextFormat.PlainText;
+        }
+
+        @Override
+        public boolean isResolveDocumentationSupported() {
+            return false;
+        }
+
+        @Override
+        public boolean isResolveAdditionalTextEditsSupported() {
+            return false;
+        }
+    }
 }

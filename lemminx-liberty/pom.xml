@@ -27,7 +27,8 @@
     </developers>
 
     <properties>
-        <lemminx.version>0.26.1</lemminx.version>
+        <lemminx.version>0.31.3-SNAPSHOT</lemminx.version>
+        <lsp4j.version>1.0.0</lsp4j.version>
     </properties>
 
     <scm>
@@ -245,6 +246,12 @@
             <scope>test</scope>
             <classifier>tests</classifier>
             <type>test-jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.lsp4j</groupId>
+            <artifactId>org.eclipse.lsp4j</artifactId>
+            <version>${lsp4j.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
     <repositories>

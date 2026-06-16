@@ -22,6 +22,7 @@ import org.eclipse.lemminx.services.extensions.hover.IHoverParticipant;
 import org.eclipse.lemminx.services.extensions.IXMLExtension;
 import org.eclipse.lemminx.services.extensions.XMLExtensionsRegistry;
 import org.eclipse.lemminx.services.extensions.diagnostics.IDiagnosticsParticipant;
+import org.eclipse.lemminx.services.extensions.inlinecompletion.IInlineCompletionParticipant;
 import org.eclipse.lemminx.services.extensions.save.ISaveContext;
 import org.eclipse.lemminx.services.extensions.save.ISaveContext.SaveContextType;
 import org.eclipse.lemminx.uriresolver.URIResolverExtension;
@@ -46,6 +47,7 @@ public class LibertyExtension implements IXMLExtension {
 
     private URIResolverExtension xsdResolver;
     private ICompletionParticipant completionParticipant;
+    private IInlineCompletionParticipant inlineCompletionParticipant;
     private IHoverParticipant hoverParticipant;
     private IDiagnosticsParticipant diagnosticsParticipant;
     private ICodeActionParticipant codeActionsParticipant;
@@ -74,8 +76,11 @@ public class LibertyExtension implements IXMLExtension {
         xsdResolver = new LibertyXSDURIResolver();
         xmlExtensionsRegistry.getResolverExtensionManager().registerResolver(xsdResolver);
 
-        completionParticipant = new LibertyCompletionParticipant();
+        LibertyCompletionParticipant libertyCompletionParticipant = new LibertyCompletionParticipant();
+        completionParticipant = libertyCompletionParticipant;
+        inlineCompletionParticipant = libertyCompletionParticipant;
         xmlExtensionsRegistry.registerCompletionParticipant(completionParticipant);
+        xmlExtensionsRegistry.registerInlineCompletionParticipant(inlineCompletionParticipant);
 
         hoverParticipant = new LibertyHoverParticipant();
         xmlExtensionsRegistry.registerHoverParticipant(hoverParticipant);
@@ -122,6 +127,7 @@ public class LibertyExtension implements IXMLExtension {
 
         xmlExtensionsRegistry.getResolverExtensionManager().unregisterResolver(xsdResolver);
         xmlExtensionsRegistry.unregisterCompletionParticipant(completionParticipant);
+        xmlExtensionsRegistry.unregisterInlineCompletionParticipant(inlineCompletionParticipant);
         xmlExtensionsRegistry.unregisterHoverParticipant(hoverParticipant);
         xmlExtensionsRegistry.unregisterDiagnosticsParticipant(diagnosticsParticipant);
         xmlExtensionsRegistry.unregisterCodeActionParticipant(codeActionsParticipant);

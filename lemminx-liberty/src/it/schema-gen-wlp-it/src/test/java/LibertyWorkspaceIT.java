@@ -36,7 +36,7 @@ public class LibertyWorkspaceIT {
         File serverXmlFile = new File(testFolder, "src/main/liberty/config/server.xml");
 
         //Configure Liberty workspace for testing
-        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString());
+        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString(), "test");
         List<WorkspaceFolder> testWorkspaceFolders = new ArrayList<WorkspaceFolder>();
         testWorkspaceFolders.add(testWorkspace);
         LibertyProjectsManager.getInstance().setWorkspaceFolders(testWorkspaceFolders);
@@ -65,7 +65,7 @@ public class LibertyWorkspaceIT {
         File serverXmlFile = new File(testFolder, "src/main/liberty/config/server.xml");
 
         //Configure Liberty workspace for testing
-        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString());
+        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString(), "test");
         List<WorkspaceFolder> testWorkspaceFolders = new ArrayList<WorkspaceFolder>();
         testWorkspaceFolders.add(testWorkspace);
         LibertyProjectsManager.getInstance().setWorkspaceFolders(testWorkspaceFolders);
@@ -96,6 +96,6 @@ public class LibertyWorkspaceIT {
 
         org.junit.jupiter.api.Assertions.assertFalse(featurelistFile.exists(), "Found unexpected generated featurelist file: "+featureListName);
         // this version test needs to be updated whenever a new liberty version is released
-        org.junit.jupiter.api.Assertions.assertEquals(SettingsService.getInstance().getLatestRuntimeVersion(), "26.0.0.2");
+        org.junit.jupiter.api.Assertions.assertEquals(SettingsService.getInstance().getLatestRuntimeVersion(), "26.0.0.6");
     }
 }

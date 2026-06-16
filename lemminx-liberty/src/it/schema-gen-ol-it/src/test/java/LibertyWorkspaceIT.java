@@ -34,7 +34,7 @@ public class LibertyWorkspaceIT {
         File serverXmlFile = new File(testFolder, "src/main/liberty/config/server.xml");
 
         //Configure Liberty workspace for testing
-        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString());
+        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString(), "test");
         List<WorkspaceFolder> testWorkspaceFolders = new ArrayList<WorkspaceFolder>();
         testWorkspaceFolders.add(testWorkspace);
         LibertyProjectsManager.getInstance().setWorkspaceFolders(testWorkspaceFolders);
@@ -63,7 +63,7 @@ public class LibertyWorkspaceIT {
         File serverXmlFile = new File(testFolder, "src/main/liberty/config/server.xml");
 
         //Configure Liberty workspace for testing
-        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString());
+        WorkspaceFolder testWorkspace = new WorkspaceFolder(testFolder.toURI().toString(), "test");
         List<WorkspaceFolder> testWorkspaceFolders = new ArrayList<WorkspaceFolder>();
         testWorkspaceFolders.add(testWorkspace);
         LibertyProjectsManager.getInstance().setWorkspaceFolders(testWorkspaceFolders);
