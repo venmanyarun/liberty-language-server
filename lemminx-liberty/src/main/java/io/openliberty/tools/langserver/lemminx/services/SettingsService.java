@@ -22,11 +22,10 @@ import org.eclipse.lsp4j.InitializeParams;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.logging.Logger;
 
-import static io.openliberty.tools.langserver.lemminx.util.LibertyUtils.findFileInWorkspace;
+import static io.openliberty.tools.langserver.lemminx.util.LibertyUtils.getPluginConfigFile;
 import static io.openliberty.tools.langserver.lemminx.util.ResourceBundleUtil.toLocale;
 
 public class SettingsService {
@@ -104,7 +103,7 @@ public class SettingsService {
      */
     public void populateVariablesForWorkspace(LibertyWorkspace workspace) {
         Properties variablesForWorkspace = new Properties();
-        Path pluginConfigFilePath = findFileInWorkspace(workspace, Paths.get("liberty-plugin-config.xml"));
+        Path pluginConfigFilePath = getPluginConfigFile(workspace);
         if (pluginConfigFilePath != null) {
             File installDirectory = LibertyUtils.getFileFromLibertyPluginXml(pluginConfigFilePath, "installDirectory");
             File serverDirectory = LibertyUtils.getFileFromLibertyPluginXml(pluginConfigFilePath, "serverDirectory");
@@ -192,7 +191,7 @@ public class SettingsService {
     // Check if the liberty-plugin-config.xml is copied to server or not
     public boolean isLibertyPluginConfigAvailableInServer(LibertyWorkspace libertyWorkspace) {
         if (libertyWorkspace != null) {
-            Path pluginConfigFilePath = LibertyUtils.findFileInWorkspace(libertyWorkspace, Paths.get("liberty-plugin-config.xml"));
+            Path pluginConfigFilePath = LibertyUtils.getPluginConfigFile(libertyWorkspace);
             return pluginConfigFilePath != null;
         }
         return false;

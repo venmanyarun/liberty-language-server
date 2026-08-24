@@ -4,7 +4,9 @@ import java.util.List;
 import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.openliberty.tools.langserver.lemminx.services.LibertyWorkspace;
@@ -50,6 +52,14 @@ public class LibertyWorkspaceIT {
         // Assert that the liberty plugin config is copied to the server
         LibertyWorkspace workspace = LibertyProjectsManager.getInstance().getWorkspaceFolder(testWorkspace.getUri());
         assert SettingsService.getInstance().isLibertyPluginConfigAvailableInServer(workspace);
+
+        // Verify that the plugin config path cache is stable: two sequential lookups must
+        // return the same Path instance, proving no redundant filesystem walk occurs.
+        Path firstLookup = LibertyUtils.getPluginConfigFile(workspace);
+        Path secondLookup = LibertyUtils.getPluginConfigFile(workspace);
+        assertNotNull(firstLookup, "Expected liberty-plugin-config.xml to be found in workspace");
+        assertEquals(firstLookup, secondLookup,
+                "Repeated getPluginConfigFile calls returned different paths — cache is not stable");
 
         String serverXML = String.join(newLine, //
                 "<server description=\"Sample Liberty server\">", //

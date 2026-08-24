@@ -23,6 +23,8 @@ import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
+import io.openliberty.tools.langserver.lemminx.util.LibertyUtils;
+
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
@@ -112,6 +114,9 @@ public class LibertyWorkspace {
             setLibertyInstallationDir(null);
             // clear the cached feature list when Liberty is no longer installed
             this.installedFeaturesAndPlatformsList = new FeaturesAndPlatforms();
+            // invalidate path caches so the next request re-resolves liberty-plugin-config.xml
+            // and the Liberty properties file rather than using stale paths
+            LibertyUtils.invalidatePathCaches(this);
         }
     }
 

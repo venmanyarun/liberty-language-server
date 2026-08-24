@@ -27,8 +27,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -62,6 +64,23 @@ public class LibertyUtils {
     private static final Pattern EXCLUDE_PATTERN = Pattern.compile(EXCLUDE_PATTERN_REGEX);
 
     private static Thread thread;
+
+    /**
+     * Per-workspace cache for the resolved liberty-plugin-config.xml path.
+     * A map entry of Optional.empty() means the file was not found (cached absence).
+     * A missing map entry means the result has not been computed yet.
+     * WeakHashMap ensures entries are automatically removed when a workspace is GC'd.
+     */
+    private static final Map<LibertyWorkspace, Optional<Path>> pluginConfigPathCache =
+            new WeakHashMap<>();
+
+    /**
+     * Per-workspace cache for the resolved Liberty properties file path
+     * (openliberty.properties / WebSphereApplicationServer.properties).
+     * Same Optional semantics as pluginConfigPathCache.
+     */
+    private static final Map<LibertyWorkspace, Optional<Path>> propertiesFilePathCache =
+            new WeakHashMap<>();
 
     //considering ${var} pattern for variable.  do we have other representation for variable?
     private static final String VAR_PATTERN_REGEX = "\\$\\{(.*?)\\}";
@@ -258,6 +277,50 @@ public class LibertyUtils {
     }
 
     /**
+     * Invalidates both the plugin config path cache and the properties file path cache for the
+     * given workspace. Must be called whenever the workspace's Liberty installation may have
+     * changed (e.g. when {@code setLibertyInstalled(false)} is called).
+     *
+     * @param libertyWorkspace workspace whose cached paths should be cleared
+     */
+    public static void invalidatePathCaches(LibertyWorkspace libertyWorkspace) {
+        pluginConfigPathCache.remove(libertyWorkspace);
+        propertiesFilePathCache.remove(libertyWorkspace);
+    }
+
+    /**
+     * Returns the path to {@code liberty-plugin-config.xml} for the given workspace, using a
+     * cached result when available. Performs a filesystem walk only on the first call per
+     * workspace (or after the cache has been invalidated via {@link #invalidatePathCaches}).
+     * If the cached path no longer exists on disk, the cache is silently refreshed.
+     *
+     * @param libertyWorkspace workspace to search
+     * @return path to {@code liberty-plugin-config.xml}, or {@code null} if not found
+     */
+    public static Path getPluginConfigFile(LibertyWorkspace libertyWorkspace) {
+        if (libertyWorkspace.getWorkspaceURI() == null) {
+            return null;
+        }
+        Optional<Path> cached = pluginConfigPathCache.get(libertyWorkspace);
+        if (cached != null) {
+            // Cache hit: check whether the cached path is still valid on disk.
+            if (cached.isEmpty()) {
+                return null; // cached absence
+            }
+            Path cachedPath = cached.get();
+            if (cachedPath.toFile().exists()) {
+                return cachedPath;
+            }
+            // Cached path is stale (file was deleted) — fall through to re-search.
+            pluginConfigPathCache.remove(libertyWorkspace);
+        }
+        Path result = findFileInWorkspace(libertyWorkspace, Paths.get("liberty-plugin-config.xml"));
+        pluginConfigPathCache.put(libertyWorkspace, Optional.ofNullable(result));
+        LOGGER.info("Cached plugin config path for workspace " + libertyWorkspace.getWorkspaceString() + ": " + result);
+        return result;
+    }
+
+    /**
      * Given a Path and a LibertyWorkspace, find the most recently edited file that matches the given Path in the Liberty installation for the workspace.
      * 
      * @param libertyWorkspace
@@ -398,19 +461,35 @@ public class LibertyUtils {
     }
 
     /*
-     * First search for liberty-plugin-config.xml to determine the installation location for Liberty in which to find the properties files. 
-     * If not found, simply look for the properties files in the local libertyWorkspace. In either case, first look for WebSphereApplicatonServer.properties 
-     * which is only present for WebSphere Liberty. If not found, then look for openliberty.properties which is present in both WebSphere Liberty and Open Liberty, 
+     * First search for liberty-plugin-config.xml to determine the installation location for Liberty in which to find the properties files.
+     * If not found, simply look for the properties files in the local libertyWorkspace. In either case, first look for WebSphereApplicationServer.properties
+     * which is only present for WebSphere Liberty. If not found, then look for openliberty.properties which is present in both WebSphere Liberty and Open Liberty,
      * but whose productId is only correct for Open Liberty.
-     * 
+     * Results are cached per-workspace to avoid repeated filesystem walks. The cache is invalidated
+     * automatically when {@link #invalidatePathCaches(LibertyWorkspace)} is called.
+     *
      * @param libertyWorkspace
      * @return Path to the properties file to use, or null if not found
      */
     public static Path getLibertyPropertiesFile(LibertyWorkspace libertyWorkspace) {
+        Optional<Path> cachedProps = propertiesFilePathCache.get(libertyWorkspace);
+        if (cachedProps != null) {
+            // Cache hit: verify the cached path still exists on disk.
+            if (cachedProps.isEmpty()) {
+                return null; // cached absence
+            }
+            Path cachedPath = cachedProps.get();
+            if (cachedPath.toFile().exists()) {
+                return cachedPath;
+            }
+            // Stale entry — fall through to re-search.
+            propertiesFilePathCache.remove(libertyWorkspace);
+        }
+
         Path props = null;
- 
+
         // check for Liberty installation using liberty-plugin-config.xml which should ensure using the latest Liberty install for the workspace
-        Path pluginConfigFilePath = findFileInWorkspace(libertyWorkspace,Paths.get("liberty-plugin-config.xml"));
+        Path pluginConfigFilePath = getPluginConfigFile(libertyWorkspace);
         if (pluginConfigFilePath != null) { //If liberty-plugin-config.xml exists, get installation directory from it
             String installationDirectory  = XmlReader.getElementValue(pluginConfigFilePath, "installDirectory");
             if (installationDirectory != null) {
@@ -421,11 +500,11 @@ public class LibertyUtils {
                         if (props == null) {
                             props = findLastModifiedMatchingFileInDirectory(libertyInstallDir, Paths.get("openliberty.properties"));
                             if (props == null) {
-                                LOGGER.info("Could not find openliberty.properties file in Liberty installation: " + libertyInstallDir.toString());                            
+                                LOGGER.info("Could not find openliberty.properties file in Liberty installation: " + libertyInstallDir.toString());
                             }
                         }
                     } catch (IOException e) {
-                        LOGGER.warning("Error received loading properties file from Liberty installation: " + libertyInstallDir.toString() + ": " + e.getMessage());                            
+                        LOGGER.warning("Error received loading properties file from Liberty installation: " + libertyInstallDir.toString() + ": " + e.getMessage());
                     }
                 }
             }
@@ -440,6 +519,8 @@ public class LibertyUtils {
             }
         }
 
+        propertiesFilePathCache.put(libertyWorkspace, Optional.ofNullable(props));
+        LOGGER.info("Cached properties file path for workspace " + libertyWorkspace.getWorkspaceString() + ": " + props);
         return props;
     }
 
@@ -481,7 +562,7 @@ public class LibertyUtils {
         }
         try {
             File libertyLSFolder = new File(libertyWorkspace.getDir(), ".libertyls"); //Default to workspaceDir/.libertyls
-            Path pluginConfigFilePath = findFileInWorkspace(libertyWorkspace,Paths.get("liberty-plugin-config.xml"));
+            Path pluginConfigFilePath = getPluginConfigFile(libertyWorkspace);
             if (pluginConfigFilePath != null) { //If liberty-plugin-config.xml exists use its parent directory: buildDir/.libertyls
                 libertyLSFolder = new File(pluginConfigFilePath.getParent().toFile(), ".libertyls");
             }
@@ -507,23 +588,33 @@ public class LibertyUtils {
      * @param libertyWorkspace Liberty Workspace object, updated to indicate if
      *                         there is an associated installation of Liberty
      */
-    public static void watchFiles(Path watchFile, LibertyWorkspace libertyWorkspace) {     
-        boolean isProperties = watchFile.endsWith("openliberty.properties"); // if false, watchFile is a metadata file
+    public static void watchFiles(Path watchFile, LibertyWorkspace libertyWorkspace) {
+        // Match both Open Liberty and WebSphere Liberty properties files.
+        boolean isProperties = watchFile.endsWith("openliberty.properties")
+                            || watchFile.endsWith("WebSphereApplicationServer.properties");
+        // Capture just the file name so we can filter events to this specific file.
+        String watchFileName = watchFile.getFileName().toString();
         try {
             WatchService watcher = FileSystems.getDefault().newWatchService();
-            watchFile.getParent().register(watcher, StandardWatchEventKinds.ENTRY_MODIFY);
+            // Register for both MODIFY and DELETE so we detect the file being removed.
+            watchFile.getParent().register(watcher,
+                    StandardWatchEventKinds.ENTRY_MODIFY,
+                    StandardWatchEventKinds.ENTRY_DELETE);
             thread = new Thread(() -> {
                 WatchKey watchKey = null;
                 try {
                     while (true) {
                         watchKey = watcher.poll(5, TimeUnit.SECONDS);
                         if (watchKey != null) {
-                            watchKey.pollEvents().stream().forEach(event -> {                                
+                            watchKey.pollEvents().stream().forEach(event -> {
                                 if (isProperties) {
-                                    // if modified re-calculate version
-                                    LOGGER.info("Liberty properties file (" + watchFile + ") has been modified: "
-                                    + event.context());
-                                    libertyWorkspace.setLibertyInstalled(false);
+                                    // Only react to events on the specific properties file being watched,
+                                    // not every file in the same directory.
+                                    if (watchFileName.equals(event.context().toString())) {
+                                        LOGGER.info("Liberty properties file (" + watchFile + ") has been modified or deleted: "
+                                                + event.context());
+                                        libertyWorkspace.setLibertyInstalled(false);
+                                    }
                                 } else if (((Path)event.context()).toString().endsWith("-liberty-devc-metadata.xml")){
                                     // watch and execute only on metadata files
                                     DevcMetadata devcMetadata = LibertyWorkspace.unmarshalDevcMetadataFile(watchFile);

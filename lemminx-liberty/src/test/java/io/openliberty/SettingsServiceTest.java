@@ -49,6 +49,8 @@ public class SettingsServiceTest {
         libertyUtils = Mockito.mockStatic(LibertyUtils.class);
         libertyUtils.when(() -> LibertyUtils.findFileInWorkspace(any(), any()))
                 .thenReturn(Path.of(resourcesDir.getPath()));
+        libertyUtils.when(() -> LibertyUtils.getPluginConfigFile(any()))
+                .thenReturn(Path.of(resourcesDir.getPath()));
         libertyUtils.when(() -> LibertyUtils.getFileFromLibertyPluginXml(any(), eq("serverDirectory")))
                 .thenReturn(serverDir);
         libertyUtils.when(() -> LibertyUtils.getFileFromLibertyPluginXml(any(), eq("installDirectory")))
