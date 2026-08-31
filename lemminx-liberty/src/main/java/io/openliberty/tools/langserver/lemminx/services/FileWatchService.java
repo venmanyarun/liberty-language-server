@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 IBM Corporation and others.
+ * Copyright (c) 2024, 2026 IBM Corporation and others.
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Public License v. 2.0 which is available at
@@ -114,6 +114,7 @@ public class FileWatchService {
 
             /**
              * update variables on file alteration, if modified file is a config
+             * and also invalidate the workspace's cached config plugin path if needed
              *
              * @param file changed file
              * @param workspace current workspace

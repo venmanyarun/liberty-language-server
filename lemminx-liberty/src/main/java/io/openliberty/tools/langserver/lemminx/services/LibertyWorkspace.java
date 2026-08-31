@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright (c) 2020, 2025 IBM Corporation and others.
+* Copyright (c) 2020, 2026 IBM Corporation and others.
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License v. 2.0 which is available at
@@ -30,6 +30,7 @@ import io.openliberty.tools.langserver.lemminx.data.FeatureListGraph;
 import io.openliberty.tools.langserver.lemminx.models.feature.Feature;
 import io.openliberty.tools.langserver.lemminx.models.feature.FeaturesAndPlatforms;
 import io.openliberty.tools.langserver.lemminx.models.settings.DevcMetadata;
+import io.openliberty.tools.langserver.lemminx.util.LibertyUtils;
 
 public class LibertyWorkspace {
 
@@ -112,6 +113,8 @@ public class LibertyWorkspace {
             setLibertyInstallationDir(null);
             // clear the cached feature list when Liberty is no longer installed
             this.installedFeaturesAndPlatformsList = new FeaturesAndPlatforms();
+            // clear file path caches so they are re-resolved on the next request
+            LibertyUtils.invalidatePluginConfigPathCache(this);
         }
     }
 
